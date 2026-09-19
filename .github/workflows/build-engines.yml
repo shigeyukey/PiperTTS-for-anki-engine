@@ -1,0 +1,82 @@
+name: Build engines
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. engines-v1.0.0)"
+        required: true
+        type: string
+      emsdk_version:
+        description: "Emscripten version"
+        required: true
+        default: "6.0.5"
+        type: string
+      ort_web_version:
+        description: "onnxruntime-web version (files are taken from jsDelivr)"
+        required: true
+        default: "1.30.0"
+        type: string
+      libpiper_commit:
+        description: "piper1-gpl commit (libpiper source)"
+        required: true
+        default: "850c45a3d70b5981de4d908ba98caf39796e7201"
+        type: string
+      espeak_ng_commit:
+        description: "espeak-ng commit"
+        required: true
+        default: "212928b394a96e8fd2096616bfd54e17845c48f6"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Install emsdk
+        uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: ${{ inputs.emsdk_version }}
+
+      - name: Install the Rust wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-emscripten
+
+      - name: Build piper_wasm.js and onnxruntime-web
+        run: |
+          scripts/build_piper_wasm.ps1 `
+            -EmsdkRoot $env:EMSDK `
+            -LibpiperCommit ${{ inputs.libpiper_commit }} `
+            -EspeakNgCommit ${{ inputs.espeak_ng_commit }} `
+            -OrtWebVersion ${{ inputs.ort_web_version }}
+
+      - name: Build the japanese phonemizer
+        run: |
+          scripts/build_jpreprocess_wasm.ps1 -EmsdkRoot $env:EMSDK
+
+      - name: Package the release assets
+        run: |
+          python scripts/package_release.py `
+            --tag "${{ inputs.tag }}" `
+            --repository "${{ github.repository }}"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ inputs.tag }}"
+          $manifest = Get-Content -Raw dist/manifest.json | ConvertFrom-Json
+          gh release create $tag `
+            --title $tag `
+            --notes-file dist/release_notes.md `
+            "dist/manifest.json" `
+            "dist/$($manifest.zip.name)"
