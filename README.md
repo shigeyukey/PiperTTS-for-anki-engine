@@ -8,3 +8,7 @@ The engine files in the releases are built from:
 - onnxruntime-web — MIT: https://github.com/microsoft/onnxruntime
 
 The license texts are collected at build time and included in `licenses/` inside the release zip.
+
+`scripts/`, `src/` and `jpreprocess_poc/` are mirrored in the add-on repository (`dev_tools/`);
+keep both copies identical. A new build needs a new release tag and an update of
+`PIPER_ENGINE_RELEASE_TAG` in the add-on (`path_manager.py`).

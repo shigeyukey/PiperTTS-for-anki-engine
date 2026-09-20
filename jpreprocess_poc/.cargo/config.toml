@@ -13,7 +13,7 @@ rustflags = [
     "-C", "link-arg=-sMAXIMUM_MEMORY=2147483648",
     "-C", "link-arg=-sMODULARIZE=1",
     "-C", "link-arg=-sEXPORT_NAME=createJaPhonemizer",
-    "-C", "link-arg=-sEXPORTED_FUNCTIONS=['_ja_init','_ja_phonemize','_ja_free','_malloc','_free']",
+    "-C", "link-arg=-sEXPORTED_FUNCTIONS=['_ja_init','_ja_phonemize','_ja_kokoro_phonemes','_ja_free','_malloc','_free']",
     "-C", "link-arg=-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','lengthBytesUTF8','stringToUTF8']",
     "-C", "link-arg=-sENVIRONMENT=node,web,worker",
 ]

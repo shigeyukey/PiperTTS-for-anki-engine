@@ -4,10 +4,14 @@
 //! - `phonemize`    : full pipeline (text -> OpenJTalk labels -> IPA), one
 //!                    string per sentence, ready to be mapped to phoneme ids
 //!                    with the voice's `phoneme_id_map`.
+//! - `kokoro_ja`    : the same front end rewritten into the phoneme alphabet of
+//!                    the Kokoro japanese voices (misaki/cutlet spelling)
 //!
-//! The Japanese voice model was trained on exactly this representation, so the
-//! result matches piper1-gpl's `phoneme_type: "japanese"` output.
+//! The Japanese piper voice model was trained on exactly this IPA
+//! representation, so the result matches piper1-gpl's `phoneme_type:
+//! "japanese"` output.
 
+pub mod kokoro_ja;
 pub mod phonemize_ja;
 
 use jpreprocess::kind::JPreprocessDictionaryKind;
@@ -86,6 +90,17 @@ pub fn phonemize(text: &str) -> Vec<String> {
     sentences
 }
 
+/// Phonemize japanese text for the Kokoro engine: one phoneme string per
+/// sentence, written in the alphabet the japanese Kokoro voices were trained
+/// on (misaki/cutlet). See [`kokoro_ja`].
+pub fn kokoro_phonemes(text: &str) -> Vec<String> {
+    if !init() {
+        return Vec::new();
+    }
+    kokoro_ja::phonemize(text)
+}
+
+
 // ---------------------------------------------------------------------------
 // C API (used by the QWebEngine side through Emscripten)
 // ---------------------------------------------------------------------------
@@ -121,7 +136,26 @@ pub extern "C" fn ja_phonemize(text: *const c_char) -> *mut c_char {
     }
 }
 
-/// Release a string returned by [`ja_phonemize`].
+/// Phonemize japanese `text` for the Kokoro engine and return a NUL terminated
+/// UTF-8 string with one phoneme sentence per line ("" when nothing could be
+/// phonemized). The returned pointer must be released with [`ja_free`].
+#[no_mangle]
+pub extern "C" fn ja_kokoro_phonemes(text: *const c_char) -> *mut c_char {
+    if text.is_null() {
+        return CString::new("").unwrap().into_raw();
+    }
+
+    let text = unsafe { CStr::from_ptr(text) };
+    let text = text.to_string_lossy();
+
+    let joined = kokoro_phonemes(&text).join("\n");
+    match CString::new(joined) {
+        Ok(s) => s.into_raw(),
+        Err(_) => CString::new("").unwrap().into_raw(),
+    }
+}
+
+/// Release a string returned by [`ja_phonemize`] or [`ja_kokoro_phonemes`].
 #[no_mangle]
 pub extern "C" fn ja_free(ptr: *mut c_char) {
     if ptr.is_null() {
