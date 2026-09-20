@@ -76,47 +76,91 @@ fn makes_central_vowel(phone: &str) -> bool {
     matches!(phone, "s" | "z" | "ts")
 }
 
+/// The single character of a symbol phone (".", ",", "#" ...), if it is one.
+fn single_symbol(phone: &str) -> Option<char> {
+    let mut chars = phone.chars();
+    let symbol = chars.next()?;
+    if chars.next().is_some() {
+        return None;
+    }
+    Some(symbol)
+}
+
 /// True for the prosody symbols that are not part of the phoneme sequence.
 fn is_skipped_symbol(phone: &str) -> bool {
-    matches!(phone, ACCENT_RISE | ACCENT_FALL | ACCENT_PHRASE_BOUNDARY)
+    match single_symbol(phone) {
+        Some(symbol) => {
+            symbol == ACCENT_RISE || symbol == ACCENT_FALL || symbol == ACCENT_PHRASE_BOUNDARY
+        }
+        None => false,
+    }
 }
 
-/// True for symbols that end the phoneme sequence (nothing follows them).
+/// True for phones that end the phoneme sequence (sentence end and pauses).
 fn is_boundary_symbol(phone: &str) -> bool {
-    matches!(
-        phone,
-        PAUSE | DECLARATIVE_END | INTERROGATIVE_END | "pau" | "sil"
-    )
+    if (phone == "pau") || (phone == "sil") {
+        return true;
+    }
+    match single_symbol(phone) {
+        Some(symbol) => {
+            symbol == PAUSE || symbol == DECLARATIVE_END || symbol == INTERROGATIVE_END
+        }
+        None => false,
+    }
 }
 
-/// The vowel cutlet uses for ん before `next_phone`.
+/// The vowel cutlet uses for ん before the phoneme that follows.
 ///
-/// cutlet checks the *phoneme* that follows: m before m/p/b, ŋ before k/ɡ,
+/// cutlet checks the *phoneme* of the next mora: m before m/p/b, ŋ before k/ɡ,
 /// ɲ before ɲ/ʨ/ʥ, n before n/t/d/ɾ/z, ɴ in every other case.
-fn nasal_vowel(next_phone: &str) -> &'static str {
-    match next_phone {
-        "m" | "my" | "p" | "py" | "b" | "by" => "m",
-        "k" | "ky" | "kw" | "g" | "gy" | "gw" => "ŋ",
-        "ny" | "ch" | "j" => "ɲ",
-        "n" | "t" | "ty" | "d" | "dy" | "r" | "ry" | "z" => "n",
+fn nasal_vowel(next_phoneme: &str) -> &'static str {
+    match next_phoneme {
+        "m" | "p" | "b" => "m",
+        "k" | "kʲ" | "kᵝ" | "ɡ" | "ɡʲ" | "ɡᵝ" => "ŋ",
+        "ɲ" | "ʨ" | "ʥ" => "ɲ",
+        "n" | "t" | "tʲ" | "d" | "dʲ" | "ɾ" | "ɾʲ" | "z" => "n",
         _ => "ɴ",
     }
 }
 
-/// The first phone after `index` that is part of the phoneme sequence
-/// (prosody symbols are skipped, a pause or a sentence end counts as "nothing").
-fn following_phone<'a>(phones: &'a [String], index: usize) -> &'a str {
+/// cutlet writes に / ひ with a palatal consonant (ɲi / çi), while OpenJTalk
+/// spells them as a plain n + i / h + i.
+fn palatalized(phone: &str, next_phone: &str) -> Option<&'static str> {
+    if next_phone != "i" {
+        return None;
+    }
+    if phone == "n" {
+        return Some("ɲ");
+    }
+    if phone == "h" {
+        return Some("ç");
+    }
+    None
+}
+
+/// The next two phones of the sequence (prosody symbols are skipped, a pause or
+/// a sentence end counts as "nothing").
+fn following_phones<'a>(phones: &'a [String], index: usize) -> (&'a str, &'a str) {
+    let mut first = "";
+    let mut found_first = false;
+
     for phone in phones.iter().skip(index + 1) {
         let phone = phone.as_str();
         if is_skipped_symbol(phone) {
             continue;
         }
-        if is_boundary_symbol(phone) {
-            return "";
+        if !found_first {
+            if is_boundary_symbol(phone) {
+                return ("", "");
+            }
+            first = phone;
+            found_first = true;
+            continue;
         }
-        return phone;
+        return (first, phone);
     }
-    ""
+
+    (first, "")
 }
 
 fn push_space(text: &mut String) {
@@ -132,30 +176,47 @@ pub fn phonemize_sentence(phones: &[String]) -> String {
 
     for (index, phone) in phones.iter().enumerate() {
         let current = phone.as_str();
+        let symbol = single_symbol(current);
 
-        if current == ACCENT_RISE || current == ACCENT_FALL {
+        if (symbol == Some(ACCENT_RISE)) || (symbol == Some(ACCENT_FALL)) {
             continue;
         }
-        if current == ACCENT_PHRASE_BOUNDARY {
+        if symbol == Some(ACCENT_PHRASE_BOUNDARY) {
             push_space(&mut text);
             previous = None;
             continue;
         }
-        if current == PAUSE {
+        if symbol == Some(PAUSE) {
             text.push(',');
             text.push(' ');
             previous = None;
             continue;
         }
-        if current == DECLARATIVE_END || current == INTERROGATIVE_END {
-            text.push_str(current);
+        if (symbol == Some(DECLARATIVE_END)) || (symbol == Some(INTERROGATIVE_END)) {
+            text.push(symbol.unwrap());
             text.push(' ');
             previous = None;
             continue;
         }
 
+        let (next_phone, next_phone_2) = following_phones(phones, index);
+
         if current == "N" {
-            text.push_str(nasal_vowel(following_phone(phones, index)));
+            // the next mora decides which ん this is; に / ひ count as ɲ / ç
+            let next_phoneme = match palatalized(next_phone, next_phone_2) {
+                Some(phoneme) => phoneme,
+                None => match phone_to_phoneme(next_phone) {
+                    Some(phoneme) => phoneme,
+                    None => "",
+                },
+            };
+            text.push_str(nasal_vowel(next_phoneme));
+            previous = Some(current);
+            continue;
+        }
+
+        if let Some(phoneme) = palatalized(current, next_phone) {
+            text.push_str(phoneme);
             previous = Some(current);
             continue;
         }
