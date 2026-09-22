@@ -13,6 +13,7 @@
 
 pub mod kokoro_ja;
 pub mod phonemize_ja;
+pub mod piper_plus_ja;
 
 use jpreprocess::kind::JPreprocessDictionaryKind;
 use jpreprocess::{DefaultTokenizer, JPreprocess, SystemDictionaryConfig};
@@ -100,6 +101,15 @@ pub fn kokoro_phonemes(text: &str) -> Vec<String> {
     kokoro_ja::phonemize(text)
 }
 
+/// Phonemize japanese text for the piper-plus engine: one token list with
+/// prosody per sentence (see [`piper_plus_ja`]).
+pub fn piper_plus_phonemes(text: &str) -> Vec<Vec<piper_plus_ja::Phoneme>> {
+    if !init() {
+        return Vec::new();
+    }
+    piper_plus_ja::phonemize(text)
+}
+
 
 // ---------------------------------------------------------------------------
 // C API (used by the QWebEngine side through Emscripten)
@@ -155,7 +165,27 @@ pub extern "C" fn ja_kokoro_phonemes(text: *const c_char) -> *mut c_char {
     }
 }
 
-/// Release a string returned by [`ja_phonemize`] or [`ja_kokoro_phonemes`].
+/// Phonemize japanese `text` for the piper-plus engine and return the tokens
+/// and prosody as a JSON string ("" when nothing could be phonemized).
+/// The returned pointer must be released with [`ja_free`].
+#[no_mangle]
+pub extern "C" fn ja_piper_plus_phonemes(text: *const c_char) -> *mut c_char {
+    if text.is_null() {
+        return CString::new("").unwrap().into_raw();
+    }
+
+    let text = unsafe { CStr::from_ptr(text) };
+    let text = text.to_string_lossy();
+
+    let json = piper_plus_ja::sentences_to_json(&piper_plus_phonemes(&text));
+    match CString::new(json) {
+        Ok(value) => value.into_raw(),
+        Err(_) => CString::new("").unwrap().into_raw(),
+    }
+}
+
+/// Release a string returned by [`ja_phonemize`], [`ja_kokoro_phonemes`] or
+/// [`ja_piper_plus_phonemes`].
 #[no_mangle]
 pub extern "C" fn ja_free(ptr: *mut c_char) {
     if ptr.is_null() {
