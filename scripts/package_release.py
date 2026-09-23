@@ -89,7 +89,8 @@ def write_release_notes(dist_directory: str, engine_version: str, file_entries, 
 
     piper_info = builds.get("piper_wasm") or {}
     japanese_info = builds.get("japanese") or {}
-    if piper_info or japanese_info:
+    piper_plus_info = builds.get("piper_plus") or {}
+    if piper_info or japanese_info or piper_plus_info:
         lines.append("")
         lines.append("## Build environment")
         lines.append("")
@@ -101,6 +102,8 @@ def write_release_notes(dist_directory: str, engine_version: str, file_entries, 
             lines.append(f"- piper-tts (espeak-ng-data): {piper_info.get('piper_tts', '')}")
         if japanese_info:
             lines.append(f"- rustc (jpreprocess): {japanese_info.get('rustc', '')}")
+        if piper_plus_info:
+            lines.append(f"- rustc (jpreprocess 0.9.1, piper-plus): {piper_plus_info.get('rustc', '')}")
     lines.append("")
 
     notes_path = join(dist_directory, "release_notes.md")
@@ -146,6 +149,7 @@ def main() -> int:
     builds = {
         "piper_wasm": read_build_info(artifacts_directory, "built/build_info.json"),
         "japanese": read_build_info(artifacts_directory, "built/ja/build_info.json"),
+        "piper_plus": read_build_info(artifacts_directory, "built/piper_plus/build_info.json"),
     }
 
     manifest = {

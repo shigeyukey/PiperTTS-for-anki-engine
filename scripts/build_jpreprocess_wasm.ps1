@@ -7,6 +7,7 @@ param(
     [string]$CargoBinDir = "",
     [string]$SourceDir = "",
     [string]$OutDir = "",
+    [string]$OutName = "ja_phonemizer",
     [string]$LicenseOutDir = "",
     [switch]$KeepRawWasm,
     [switch]$SkipBuild
@@ -75,34 +76,48 @@ foreach ($path in @($srcJs, $srcWasm)) {
     if (-not (Test-Path $path)) { Fail "build artifact not found: $path" }
 }
 
-$outJs = Join-Path $OutDir "ja_phonemizer.js"
-$outGz = Join-Path $OutDir "ja_phonemizer.wasm.gz"
-$outRaw = Join-Path $OutDir "ja_phonemizer.wasm"
+$outJs = Join-Path $OutDir "$OutName.js"
+$outGz = Join-Path $OutDir "$OutName.wasm.gz"
+$outRaw = Join-Path $OutDir "$OutName.wasm"
 
 Copy-Item -Force $srcJs $outJs
-Write-Step "ja_phonemizer.js: $([math]::Round((Get-Item $outJs).Length / 1KB, 1)) KB"
+Write-Step "$OutName.js: $([math]::Round((Get-Item $outJs).Length / 1KB, 1)) KB"
 
 $wasmBytes = (Get-Item $srcWasm).Length
 Write-Step "compressing the wasm ($([math]::Round($wasmBytes / 1MB, 1)) MB) ..."
-$input = [System.IO.File]::ReadAllBytes($srcWasm)
-$outStream = [System.IO.File]::Create($outGz)
+# PowerShell 5.1 on some Windows builds fails to bind the GZipStream constructor
+# (works in pwsh); fall back to python's gzip module in that case.
+$compressed = $false
 try {
-    $gzStream = New-Object System.IO.Compression.GZipStream(
-        $outStream, [System.IO.Compression.CompressionLevel]::SmallestSize)
+    $input = [System.IO.File]::ReadAllBytes($srcWasm)
+    $outStream = [System.IO.File]::Create($outGz)
     try {
-        $gzStream.Write($input, 0, $input.Length)
+        $compressionLevel = [System.IO.Compression.CompressionLevel]::SmallestSize
+        $gzStream = [System.IO.Compression.GZipStream]::new($outStream, $compressionLevel)
+        try {
+            $gzStream.Write($input, 0, $input.Length)
+        } finally {
+            $gzStream.Dispose()
+        }
+        $compressed = $true
     } finally {
-        $gzStream.Dispose()
+        $outStream.Dispose()
     }
-} finally {
-    $outStream.Dispose()
+} catch {
+    Write-Step "GZipStream is unavailable here, using the fallback ($($_.Exception.Message))"
+}
+if (-not $compressed) {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $python) { Fail "gzip compression failed: run this script with PowerShell 7 (pwsh) or install python" }
+    & $python.Source -c "import gzip,shutil,sys; src=open(sys.argv[1],'rb'); dst=gzip.open(sys.argv[2],'wb',compresslevel=9); shutil.copyfileobj(src,dst); dst.close(); src.close()" $srcWasm $outGz
+    if ($LASTEXITCODE -ne 0) { Fail "gzip compression failed (python exit code $LASTEXITCODE)" }
 }
 $gzBytes = (Get-Item $outGz).Length
-Write-Step ("ja_phonemizer.wasm.gz: {0:N1} MB ({1:N1}% of the wasm)" -f ($gzBytes / 1MB), (100 * $gzBytes / $wasmBytes))
+Write-Step ("$OutName.wasm.gz: {0:N1} MB ({1:N1}% of the wasm)" -f ($gzBytes / 1MB), (100 * $gzBytes / $wasmBytes))
 
 if ($KeepRawWasm) {
     Copy-Item -Force $srcWasm $outRaw
-    Write-Step "ja_phonemizer.wasm: $([math]::Round($wasmBytes / 1MB, 1)) MB (debug copy)"
+    Write-Step "$OutName.wasm: $([math]::Round($wasmBytes / 1MB, 1)) MB (debug copy)"
 } elseif (Test-Path $outRaw) {
     Remove-Item -Force $outRaw
 }

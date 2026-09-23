@@ -63,6 +63,14 @@ jobs:
         run: |
           scripts/build_jpreprocess_wasm.ps1 -EmsdkRoot $env:EMSDK
 
+      - name: Build the piper-plus japanese phonemizer (jpreprocess 0.9.1)
+        run: |
+          scripts/build_jpreprocess_wasm.ps1 `
+            -EmsdkRoot $env:EMSDK `
+            -SourceDir jpreprocess_poc_09 `
+            -OutDir artifacts/built/piper_plus `
+            -OutName piper_plus_phonemizer
+
       - name: Package the release assets
         run: |
           python scripts/package_release.py `

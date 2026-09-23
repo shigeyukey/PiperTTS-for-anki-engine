@@ -1,0 +1,29 @@
+[package]
+name = "jpreprocess_poc"
+version = "0.1.0"
+edition = "2021"
+
+# jpreprocess requires Rust 1.88+
+rust-version = "1.88"
+
+# piper-plus only. This crate is the jpreprocess 0.9.1 module for the
+# piper-plus engine. The shared 0.15 module (dev_tools/jpreprocess_poc) is
+# used by piper / kokoro and must not be changed.
+
+[lib]
+# The wasm module is produced from the bin target (standalone module with the
+# exported C API). A cdylib would be built as an Emscripten *side module*.
+crate-type = ["rlib"]
+
+[dependencies]
+# `naist-jdic` embeds the dictionary into the binary. The dictionary is
+# downloaded and converted at build time (network access is required once).
+# Pinned to the version used by the official piper-plus wasm build.
+jpreprocess = { version = "=0.9.1", features = ["naist-jdic"] }
+regex = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
